@@ -90,17 +90,19 @@ def metabase():
     native = call(METABASE, "/api/dataset", {
         "database": database, "type": "native",
         "native": {"query": """
-            SELECT c.name, sum(o.quantity * p.price) AS revenue, count(DISTINCT t.id) AS tickets
+            SELECT c.name, sum(o.quantity * p.price) AS revenue, coalesce(max(t.n), 0) AS tickets
             FROM crm.customers c
             JOIN shop.orders o ON o.customer_id = c.id
             JOIN shop.products p ON p.id = o.product_id
-            LEFT JOIN tickets.tickets t ON t.customer_id = c.id
+            LEFT JOIN (SELECT customer_id, count(*) AS n FROM tickets.tickets GROUP BY customer_id) t
+              ON t.customer_id = c.id
             GROUP BY c.name ORDER BY c.name"""},
     }, auth)
     assert not native.get("error"), native.get("error")
     rows = native["data"]["rows"]
-    assert [row[0] for row in rows] == ["Acme", "Globex", "Initech"], rows
-    assert float(rows[0][1]) == 53.5 and rows[0][2] == 2, rows
+    assert [(row[0], float(row[1]), row[2]) for row in rows] == [
+        ("Acme", 53.5, 2), ("Globex", 50.0, 1), ("Initech", 9.5, 0),
+    ], rows
     print("ok: native query joins Postgres, MySQL and REST:", rows)
 
     amount = fields[("shop", "orders", "quantity")]["id"]

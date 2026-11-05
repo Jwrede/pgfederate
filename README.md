@@ -5,11 +5,11 @@ One read-only PostgreSQL endpoint over PostgreSQL, MySQL, SQLite, CSV/Parquet/JS
 A BI tool connects with its ordinary PostgreSQL driver and sees one database with one schema per source. It can then join tables from different systems, because the join runs inside the gateway. No plugin, custom driver or copy of the data into a warehouse is needed.
 
 ```
-Metabase ─┐                        ┌─ PostgreSQL  (live, filters pushed down)
-Grafana  ─┤   PostgreSQL protocol  ├─ MySQL       (live, filters pushed down)
-psql     ─┼──────► pgfederate ─────┼─ SQLite      (live)
-JDBC     ─┘    (DuckDB in-process) ├─ CSV/Parquet/JSON files (live)
-                                   └─ REST APIs   (loaded on a schedule)
+Metabase --+                             +-- PostgreSQL (live, filters pushed down)
+Grafana  --+   PostgreSQL protocol       +-- MySQL (live, filters pushed down)
+psql     --+-------> pgfederate ---------+-- SQLite (live)
+JDBC     --+      (DuckDB in-process)    +-- CSV/Parquet/JSON files (live)
+                                         +-- REST APIs (loaded on a schedule)
 ```
 
 ## Why
@@ -23,9 +23,9 @@ BI tools connect to one database at a time, and the requests to change this are 
 | [metabase #4831](https://github.com/metabase/metabase/issues/4831) Driver: REST API | 889 | 2017 |
 | [metabase #7985](https://github.com/metabase/metabase/issues/7985) Driver: Google Sheets | 205 | 2018 |
 
-The answers in those threads are [Trino or Presto](https://github.com/metabase/metabase/issues/3953), foreign data wrappers, the `dblink` extension, or [pgsql-http](https://github.com/pramsey/pgsql-http) inside your own PostgreSQL. Each of these works. Each also needs either a JVM cluster or a PostgreSQL server that you may change, plus per-source setup in SQL. Steampipe covers SaaS APIs through plugins, but it does not join your own MySQL and PostgreSQL databases from a config file.
+The answers in those threads are [Trino or Presto](https://github.com/metabase/metabase/issues/3953), foreign data wrappers, the `dblink` extension, or [pgsql-http](https://github.com/pramsey/pgsql-http) inside your own PostgreSQL. Each of these works. Each also needs either a JVM cluster or a PostgreSQL server that you may change, plus per-source setup in SQL. Steampipe gives SQL access to SaaS APIs through per-service plugins.
 
-Several projects put a PostgreSQL protocol in front of DuckDB. [duckgres](https://github.com/PostHog/duckgres) was discontinued by PostHog in October 2026, and [buenavista](https://github.com/jwills/buenavista) has had no commit since 2024. pgfederate is aimed at the small case those tools leave open: a single process that a team without a data platform can start next to Metabase.
+Several projects put a PostgreSQL protocol in front of DuckDB. [duckgres](https://github.com/PostHog/duckgres) was discontinued by PostHog in October 2026, and [buenavista](https://github.com/jwills/buenavista) has not changed since December 2024. pgfederate is aimed at the small case those tools leave open: a single process that a team without a data platform can start next to Metabase.
 
 ## Install
 

@@ -62,6 +62,15 @@ def test_postgres_filter_pushdown_reads_live_data(postgres, tmp_path):
         engine.close()
 
 
+def test_postgres_filter_is_pushed_into_the_scan(postgres, tmp_path):
+    engine = load(tmp_path, {"name": "pg", "type": "postgres", "dsn": POSTGRES, "schemas": ["pgf_test"]})
+    try:
+        plan = engine.cursor().execute("explain select * from pg.parents where id = 1").fetchall()[0][1]
+        assert "POSTGRES_SCAN" in plan and "FILTER" not in plan, plan
+    finally:
+        engine.close()
+
+
 def test_postgres_refresh_finds_new_tables(postgres, tmp_path):
     engine = load(tmp_path, {"name": "pg", "type": "postgres", "dsn": POSTGRES, "schemas": ["pgf_test"]})
     try:
@@ -108,5 +117,7 @@ def test_mysql_source(tmp_path):
         assert "products" in engine.exposed["my"]
         assert engine.cursor().execute("select count(*) from my.products").fetchone()[0] > 0
         assert engine.status["my"].status == "ok"
+        plan = engine.cursor().execute("explain select * from my.products where id = 1").fetchall()[0][1]
+        assert "FILTER" not in plan, plan
     finally:
         engine.close()
