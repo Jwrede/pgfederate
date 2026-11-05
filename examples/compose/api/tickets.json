@@ -1,0 +1,5 @@
+{"items": [
+  {"id": 1, "customer_id": 1, "subject": "Login fails", "priority": {"level": 2, "name": "high"}, "opened": "2026-03-02T10:00:00Z"},
+  {"id": 2, "customer_id": 1, "subject": "Invoice missing", "priority": {"level": 3, "name": "normal"}, "opened": "2026-03-20T11:00:00Z"},
+  {"id": 3, "customer_id": 2, "subject": "Export is slow", "priority": {"level": 3, "name": "normal"}, "opened": "2026-04-05T15:00:00Z"}
+]}

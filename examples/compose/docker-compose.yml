@@ -1,0 +1,65 @@
+# A PostgreSQL database, a MySQL database, a CSV file and a JSON API behind one
+# gateway, with Metabase and Grafana connected through their PostgreSQL drivers.
+services:
+  crm:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: crm
+      POSTGRES_DB: crm
+    volumes:
+      - ./crm.sql:/docker-entrypoint-initdb.d/crm.sql:ro
+    healthcheck:
+      test: pg_isready -U postgres -d crm
+      interval: 2s
+      retries: 30
+
+  shop:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: shop
+      MYSQL_DATABASE: shop
+    volumes:
+      - ./shop.sql:/docker-entrypoint-initdb.d/shop.sql:ro
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -pshop
+      interval: 2s
+      retries: 60
+
+  api:
+    image: python:3.12-slim
+    working_dir: /srv
+    command: python -m http.server 8000
+    volumes:
+      - ./api:/srv:ro
+
+  gateway:
+    build: ../..
+    ports:
+      - "127.0.0.1:5433:5433"
+      - "127.0.0.1:9187:9187"
+    volumes:
+      - ./pgfederate.yaml:/etc/pgfederate/pgfederate.yaml:ro
+      - ./data:/data:ro
+    depends_on:
+      crm:
+        condition: service_healthy
+      shop:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+  metabase:
+    image: metabase/metabase:latest
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - gateway
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      - gateway

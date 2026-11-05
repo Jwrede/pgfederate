@@ -1,0 +1,16 @@
+server:
+  port: 5433
+
+sources:
+  - name: shop
+    type: sqlite
+    path: shop.db
+
+  - name: billing
+    type: files
+    tables:
+      invoices: invoices.csv
+
+relations:
+  - from: billing.invoices.customer_id
+    to: shop.customers.id

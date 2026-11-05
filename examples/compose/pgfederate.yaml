@@ -1,0 +1,42 @@
+server:
+  host: 0.0.0.0
+  port: 5433
+  metrics_port: 9187
+
+users:
+  - name: bi
+    password: bi-password
+
+sources:
+  - name: crm
+    type: postgres
+    dsn: postgresql://postgres:crm@crm:5432/crm
+    refresh: 5m
+
+  - name: shop
+    type: mysql
+    dsn: host=shop port=3306 user=root password=shop database=shop
+    schemas: [shop]
+
+  - name: finance
+    type: files
+    tables:
+      budgets: /data/budgets.csv
+
+  - name: tickets
+    type: rest
+    base_url: http://api:8000
+    refresh: 1m
+    tables:
+      tickets:
+        path: /tickets.json
+        records: items
+
+relations:
+  - from: shop.orders.customer_id
+    to: crm.customers.id
+  - from: tickets.tickets.customer_id
+    to: crm.customers.id
+
+primary_keys:
+  tickets.tickets: id
