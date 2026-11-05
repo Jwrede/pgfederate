@@ -66,7 +66,7 @@ def test_postgres_filter_is_pushed_into_the_scan(postgres, tmp_path):
     engine = load(tmp_path, {"name": "pg", "type": "postgres", "dsn": POSTGRES, "schemas": ["pgf_test"]})
     try:
         plan = engine.cursor().execute("explain select * from pg.parents where id = 1").fetchall()[0][1]
-        assert "POSTGRES_SCAN" in plan and "FILTER" not in plan, plan
+        assert "Postgres Scan" in plan and "Filters: id = 1" in plan and "FILTER" not in plan, plan
     finally:
         engine.close()
 
@@ -118,6 +118,6 @@ def test_mysql_source(tmp_path):
         assert engine.cursor().execute("select count(*) from my.products").fetchone()[0] > 0
         assert engine.status["my"].status == "ok"
         plan = engine.cursor().execute("explain select * from my.products where id = 1").fetchall()[0][1]
-        assert "FILTER" not in plan, plan
+        assert "id = 1" in plan and "FILTER" not in plan, plan
     finally:
         engine.close()
