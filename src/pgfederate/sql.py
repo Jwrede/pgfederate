@@ -413,6 +413,20 @@ def _arguments(node: exp.Func) -> list[exp.Expression]:
     return arguments
 
 
+def _regex_substring(node: exp.Substring) -> exp.Expression | None:
+    """substring(x from 'pattern') searches, it does not take a position."""
+    start = node.args.get("start")
+    if not (isinstance(start, exp.Literal) and start.is_string) or node.args.get("length"):
+        return None
+    pattern = start.name
+    # PostgreSQL returns the first parenthesized group when the pattern has one.
+    group = 1 if re.search(r"(?<!\\)\((?!\?)", pattern) else 0
+    return exp.Anonymous(
+        this="regexp_extract",
+        expressions=[node.this, exp.Literal.string(pattern), exp.Literal.number(group)],
+    )
+
+
 def _format(node: exp.Func) -> exp.Expression:
     """PostgreSQL format() is printf-like; DuckDB's format() is not."""
     arguments = _arguments(node)
@@ -426,6 +440,10 @@ def _function(node: exp.Func, context: Context) -> exp.Expression:
     name = _function_name(node) or ""
     if name == "format":
         return _format(node)
+    if isinstance(node, exp.Substring):
+        regex = _regex_substring(node)
+        if regex is not None:
+            return regex
     if name in PRIVILEGE_FUNCTIONS:
         # The gateway is read-only; tools such as Metabase ask before offering writes.
         arguments = _arguments(node)
@@ -548,6 +566,11 @@ def generate(tree: exp.Expression, params: dict[int, exp.Expression] | None = No
             return node
 
         tree = tree.transform(replace, copy=False)
+        # Metabase binds the pattern, so it only becomes a literal here.
+        for node in list(tree.find_all(exp.Substring)):
+            regex = _regex_substring(node)
+            if regex is not None:
+                node.replace(regex)
     return tree.sql(dialect="duckdb")
 
 

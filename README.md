@@ -205,6 +205,7 @@ The emulated catalog is not DuckDB's own `pg_catalog`, which describes DuckDB. I
 - REST data is a snapshot from the last refresh, held in memory.
 - `DECLARE`, `FETCH` and `LISTEN` are refused. Named cursors in psycopg therefore do not work. Portals, which JDBC uses, do.
 - SQL that DuckDB cannot run fails, even if it is valid PostgreSQL. Generated BI queries are covered by the tests listed below, but hand-written SQL can use PostgreSQL features with no DuckDB equivalent, such as `LATERAL` forms or specific functions.
+- Regular expressions run on RE2, which has no lookaround. Metabase's `host` and `domain` expressions use lookaround and therefore fail.
 - The catalog covers what the tested clients ask for. Comments on tables and columns are not carried over. Foreign keys are read from PostgreSQL only; for other sources declare them under `relations`.
 - `file` sources on S3 are not supported. Public `http(s)` files are.
 - Metabase's own PostgreSQL connection options such as SSH tunnels are outside this project's tests.
@@ -218,7 +219,7 @@ pytest
 
 The test suite runs real clients against a real server: psycopg (text and binary), asyncpg, and `psql` with its `\d` commands. It replays the catalog queries of Metabase, pgjdbc and Grafana, taken from their source code. `tests/test_security.py` tries about 35 escapes and writes. Set `PGFEDERATE_TEST_POSTGRES` and `PGFEDERATE_TEST_MYSQL` to include the database sources.
 
-CI additionally starts `examples/compose` and drives real Metabase and Grafana through their HTTP APIs (`tests/e2e/run.py`): connection check, schema sync, primary and cross-source foreign keys, a native query across PostgreSQL, MySQL and REST, query builder joins, month bucketing and bound parameters.
+CI additionally starts `examples/compose` and drives real Metabase and Grafana through their HTTP APIs (`tests/e2e/run.py`): connection check, schema sync, primary and cross-source foreign keys, a native query across PostgreSQL, MySQL and REST, a matrix of about 80 query builder cases (aggregations, date buckets, filters, expressions, joins, nested queries), report time zones, field values and automatic dashboards.
 
 ## License
 

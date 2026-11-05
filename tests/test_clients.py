@@ -102,6 +102,13 @@ def test_column_names_follow_postgres(dsn):
         assert [column.name for column in cursor.description] == ["count", "sum", "current_database", "x"]
 
 
+def test_substring_from_pattern_is_a_regex_search(dsn):
+    assert fetch(dsn, "select substring('Acme Corp' from '[A-Z]')") == [("A",)]
+    assert fetch(dsn, "select substring('id=42;' from 'id=([0-9]+)')") == [("42",)]
+    assert fetch(dsn, "select substring('Acme' from 2 for 2)") == [("cm",)]
+    assert fetch(dsn, "select substring(name from %s) from shop.customers where id = 1", ("[A-Z]",)) == [("A",)]
+
+
 def test_unquoted_identifiers_fold_case(dsn):
     assert fetch(dsn, "select count(*) from SHOP.CUSTOMERS") == [(3,)]
 

@@ -5,13 +5,16 @@ Expects `docker compose up` from examples/compose. Standard library only.
 """
 
 import json
+import os
 import sys
 import time
 import urllib.error
 import urllib.request
 
-METABASE = "http://127.0.0.1:3000"
-GRAFANA = "http://127.0.0.1:3001"
+METABASE = os.environ.get("METABASE_URL", "http://127.0.0.1:3000")
+GRAFANA = os.environ.get("GRAFANA_URL", "http://127.0.0.1:3001")
+GATEWAY_HOST = os.environ.get("GATEWAY_HOST", "gateway")
+GATEWAY_PORT = int(os.environ.get("GATEWAY_PORT", "5433"))
 DEADLINE = 420
 
 
@@ -56,7 +59,7 @@ def metabase():
     auth = {"X-Metabase-Session": session}
     database = call(METABASE, "/api/database", {
         "engine": "postgres", "name": "pgfederate",
-        "details": {"host": "gateway", "port": 5433, "dbname": "pgfederate", "user": "bi",
+        "details": {"host": GATEWAY_HOST, "port": GATEWAY_PORT, "dbname": "pgfederate", "user": "bi",
                     "password": "bi-password", "ssl": False},
     }, auth)["id"]
     print(f"ok: metabase accepted the connection (database {database})")
@@ -144,6 +147,161 @@ def metabase():
     assert not filtered.get("error"), filtered.get("error")
     assert len(filtered["data"]["rows"]) == 1
     print("ok: filter with a bound parameter")
+
+    query_builder_matrix(database, tables, fields, auth)
+    metabase_timezone(database, tables, fields, auth)
+    metabase_details(database, tables, fields, auth)
+
+
+def query_builder_matrix(database, tables, fields, auth):
+    """Every common aggregation, date bucket, filter and expression of the query builder."""
+    orders, customers = tables[("shop", "orders")]["id"], tables[("crm", "customers")]["id"]
+    products = tables[("shop", "products")]["id"]
+
+    def field(schema, table, column, **options):
+        return ["field", fields[(schema, table, column)]["id"], options or None]
+
+    quantity = field("shop", "orders", "quantity")
+    name = field("crm", "customers", "name")
+    signed_up = field("crm", "customers", "signed_up")
+    customer_id = field("crm", "customers", "id")
+
+    cases = {}
+    for aggregate in ("sum", "avg", "min", "max", "distinct", "stddev", "var", "cum-sum"):
+        cases[f"aggregate {aggregate}"] = (orders, {"aggregation": [[aggregate, quantity]]})
+    cases["aggregate median"] = (orders, {"aggregation": [["percentile", quantity, 0.5]]})
+    cases["aggregate cum-count"] = (
+        orders,
+        {"aggregation": [["cum-count"]], "breakout": [field("shop", "orders", "ordered_at", **{"temporal-unit": "month"})]},
+    )
+    for unit in ("minute", "hour", "day", "week", "month", "quarter", "year", "minute-of-hour", "hour-of-day",
+                 "day-of-week", "day-of-month", "day-of-year", "week-of-year", "month-of-year", "quarter-of-year"):
+        cases[f"bucket {unit}"] = (
+            orders,
+            {"aggregation": [["count"]], "breakout": [field("shop", "orders", "ordered_at", **{"temporal-unit": unit})]},
+        )
+        cases[f"bucket timestamptz {unit}"] = (
+            customers,
+            {"aggregation": [["count"]], "breakout": [field("crm", "customers", "signed_up", **{"temporal-unit": unit})]},
+        )
+    cases["binning"] = (
+        products,
+        {"aggregation": [["count"]],
+         "breakout": [field("shop", "products", "price", binning={"strategy": "num-bins", "num-bins": 4})]},
+    )
+    filters = {
+        "contains": ["contains", name, "cm", {"case-sensitive": False}],
+        "starts-with": ["starts-with", name, "A"],
+        "ends-with": ["ends-with", name, "e"],
+        "does-not-contain": ["does-not-contain", name, "x"],
+        "is-null": ["is-null", name],
+        "not-null": ["not-null", name],
+        "is-empty": ["is-empty", name],
+        "between": ["between", signed_up, "2026-01-01", "2026-02-28"],
+        "after": [">", signed_up, "2026-02-01T00:00:00Z"],
+        "relative": ["time-interval", signed_up, -30000, "day"],
+        "this year": ["time-interval", signed_up, "current", "year"],
+        "in": ["=", name, "Acme", "Globex"],
+        "not": ["not", ["=", name, "Acme"]],
+        "or": ["or", ["=", name, "Acme"], ["starts-with", name, "I"]],
+    }
+    for label, clause in filters.items():
+        cases[f"filter {label}"] = (customers, {"filter": clause})
+    expressions = {
+        "concat": ["concat", name, "-x"],
+        "coalesce": ["coalesce", name, "none"],
+        "case": ["case", [[["=", name, "Acme"], 1]], {"default": 0}],
+        "lower": ["lower", name],
+        "upper": ["upper", name],
+        "length": ["length", name],
+        "substring": ["substring", name, 1, 2],
+        "trim": ["trim", name],
+        "replace": ["replace", name, "A", "a"],
+        "regex": ["regex-match-first", name, "[A-Z]"],
+        "datetime-diff": ["datetime-diff", signed_up, "2026-12-31", "day"],
+        "datetime-add": ["datetime-add", signed_up, 1, "month"],
+        "datetime-subtract": ["datetime-subtract", signed_up, 1, "week"],
+        "now": ["now"],
+        "get-year": ["get-year", signed_up],
+        "get-month": ["get-month", signed_up],
+        "get-day-of-week": ["get-day-of-week", signed_up],
+        "convert-timezone": ["convert-timezone", signed_up, "Asia/Tokyo"],
+        "round": ["round", ["*", customer_id, 1.5]],
+        "ceil": ["ceil", 1.2],
+        "floor": ["floor", 1.8],
+        "abs": ["abs", -1],
+        "sqrt": ["sqrt", 4],
+        "power": ["power", 2, 3],
+        "exp": ["exp", 1],
+        "log": ["log", 10],
+    }
+    for label, expression in expressions.items():
+        cases[f"expression {label}"] = (customers, {"expressions": {"x": expression}, "fields": [["expression", "x"]]})
+    cases["paging"] = (orders, {"page": {"page": 2, "items": 1}, "order-by": [["asc", field("shop", "orders", "id")]]})
+    cases["explicit join"] = (
+        orders,
+        {"joins": [{"source-table": customers, "alias": "C", "fields": "all",
+                    "condition": ["=", field("shop", "orders", "customer_id"),
+                                  field("crm", "customers", "id", **{"join-alias": "C"})]}]},
+    )
+    cases["nested query"] = (
+        None,
+        {"source-query": {"source-table": orders, "aggregation": [["sum", quantity]],
+                          "breakout": [field("shop", "orders", "ordered_at", **{"temporal-unit": "month"})]},
+         "aggregation": [["count"]]},
+    )
+
+    failed = []
+    for label, (table, query) in cases.items():
+        if table:
+            query = {"source-table": table, **query}
+        request = urllib.request.Request(
+            METABASE + "/api/dataset",
+            data=json.dumps({"database": database, "type": "query", "query": query}).encode(),
+            headers={"Content-Type": "application/json", **auth},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=120) as response:
+                answer = json.load(response)
+            if answer.get("error"):
+                failed.append((label, answer["error"]))
+        except urllib.error.HTTPError as error:
+            failed.append((label, error.read().decode()[:400]))
+    assert not failed, failed
+    print(f"ok: {len(cases)} query builder cases")
+
+
+def metabase_timezone(database, tables, fields, auth):
+    """A report time zone moves a timestamp across midnight, as on PostgreSQL."""
+    call(METABASE, "/api/setting/report-timezone", {"value": "Asia/Tokyo"}, auth, "PUT")
+    try:
+        answer = call(METABASE, "/api/dataset", {
+            "database": database, "type": "query",
+            "query": {
+                "source-table": tables[("crm", "customers")]["id"],
+                "filter": ["=", ["field", fields[("crm", "customers", "signed_up")]["id"], {"temporal-unit": "day"}],
+                           "2026-03-04"],
+            },
+        }, auth)
+    finally:
+        call(METABASE, "/api/setting/report-timezone", {"value": None}, auth, "PUT")
+    assert not answer.get("error"), answer.get("error")
+    assert [row[1] for row in answer["data"]["rows"]] == ["Initech"], answer["data"]["rows"]
+    print("ok: report time zone (16:45 UTC on 3 March is 4 March in Tokyo)")
+
+
+def metabase_details(database, tables, fields, auth):
+    """Field values, fingerprints and automatic dashboards all run their own queries."""
+    call(METABASE, f"/api/database/{database}/rescan_values", {}, auth)
+
+    def values():
+        answer = call(METABASE, f"/api/field/{fields[('crm', 'customers', 'name')]['id']}/values", headers=auth)
+        return [row[0] for row in answer["values"]] == ["Acme", "Globex", "Initech"]
+
+    wait_for("field values", values, 120)
+    dashboard = call(METABASE, f"/api/automagic-dashboards/table/{tables[('shop', 'orders')]['id']}", headers=auth)
+    assert dashboard.get("dashcards"), dashboard
+    print("ok: automatic dashboard with", len(dashboard["dashcards"]), "cards")
 
 
 def grafana():
