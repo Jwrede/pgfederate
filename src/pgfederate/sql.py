@@ -383,6 +383,8 @@ def _cast(node: exp.Cast) -> exp.Expression:
     value = node.this
     if target in {"regclass", "regtype"}:
         macro = "__pgf_regclass" if target == "regclass" else "__pgf_regtype"
+        if isinstance(value, exp.Literal) and value.is_string and value.name.isdigit():
+            return exp.Literal.number(int(value.name))  # PostgreSQL reads a numeric input as the OID itself
         if isinstance(value, exp.Literal) and value.is_string or isinstance(value, exp.Parameter):
             return exp.Anonymous(this=macro, expressions=[value])
         if target == "regclass":
@@ -452,6 +454,10 @@ def _function(node: exp.Func, context: Context) -> exp.Expression:
     if name == "_pg_expandarray":
         expand = exp.Anonymous(this="__pgf_expand", expressions=_arguments(node))
         return exp.Anonymous(this="unnest", expressions=[expand])
+    if name == "pg_partition_ancestors":
+        # The catalog has no partitions, and PostgreSQL returns no rows for other relations.
+        empty = exp.cast(exp.Array(expressions=[]), exp.DataType.build("BIGINT[]"))
+        return exp.Anonymous(this="unnest", expressions=[empty])
     if name in MACRO_FUNCTIONS:
         macro, arity = MACRO_FUNCTIONS[name]
         return exp.Anonymous(this=macro, expressions=_arguments(node)[:arity])

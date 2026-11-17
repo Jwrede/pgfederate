@@ -294,3 +294,26 @@ def test_grafana_table_list(dsn):
 
 def test_grafana_columns(dsn):
     assert ("id", "bigint") in run(dsn, GRAFANA_COLUMNS)
+
+
+# psql 18 runs this for every \d, psql 17 only when relhastriggers is set (src/bin/psql/describe.c).
+PSQL18_REFERENCED_BY = """
+SELECT conname, conrelid::pg_catalog.regclass AS ontable,
+       pg_catalog.pg_get_constraintdef(oid, true) AS condef
+  FROM pg_catalog.pg_constraint c
+ WHERE confrelid IN (SELECT pg_catalog.pg_partition_ancestors('{oid}')
+                     UNION ALL VALUES ('{oid}'::pg_catalog.regclass))
+       AND contype = 'f' AND conparentid = 0
+ORDER BY conname;
+"""
+
+
+def test_psql18_referenced_by(dsn):
+    (oid,) = run(dsn, "SELECT c.oid FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                      "WHERE n.nspname = 'shop' AND c.relname = 'customers'")[0]
+    rows = run(dsn, PSQL18_REFERENCED_BY.format(oid=oid))
+    assert [row[1] for row in rows] == ["billing.invoices"]
+
+
+def test_partition_ancestors_of_plain_table_is_empty(dsn):
+    assert run(dsn, "SELECT * FROM pg_catalog.pg_partition_ancestors('shop.customers')") == []
