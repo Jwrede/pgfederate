@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
-      - run: sudo apt-get update && sudo apt-get install -y postgresql-client mysql-client
+      - run: sudo apt-get update && sudo apt-get install -y --no-upgrade postgresql-client mysql-client
       - run: pip install -e .[dev]
       - name: Seed MySQL
         run: mysql -h 127.0.0.1 -uroot -ppw shop < examples/compose/shop.sql
