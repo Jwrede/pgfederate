@@ -459,7 +459,10 @@ MACROS = [
           AND (NOT contains(CAST(x AS VARCHAR), '.')
                OR n.nspname = split_part(replace(CAST(x AS VARCHAR), '"', ''), '.', 1))
         LIMIT 1)""",
-    "CREATE OR REPLACE MACRO __pgf_regclass_name(x) AS (SELECT relname FROM __pg.pg_class WHERE oid = x LIMIT 1)",
+    # PostgreSQL qualifies the name when its schema is not on the search path
+    """CREATE OR REPLACE MACRO __pgf_regclass_name(x) AS (
+        SELECT CASE WHEN n.nspname IN ('public', 'pg_catalog') THEN c.relname ELSE n.nspname || '.' || c.relname END
+        FROM __pg.pg_class c JOIN __pg.pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = x LIMIT 1)""",
     "CREATE OR REPLACE MACRO __pgf_regtype(x) AS (SELECT oid FROM __pg.pg_type WHERE typname = CAST(x AS VARCHAR) OR pgf_sqlname = CAST(x AS VARCHAR) LIMIT 1)",
     "CREATE OR REPLACE MACRO __pgf_format_type(x, m) AS (SELECT pgf_sqlname FROM __pg.pg_type WHERE oid = x LIMIT 1)",
     """CREATE OR REPLACE MACRO __pgf_indexdef(x, n) AS (
